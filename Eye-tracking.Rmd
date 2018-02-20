@@ -1,0 +1,327 @@
+---
+title: 
+author: 
+date:
+output:
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(ggplot2)
+library(lme4)
+library(crqa)
+library(tseriesChaos)
+library(SparseM)
+library(dplyr)
+library(caret)
+library(modelr)
+library(stringr)
+library(data.table)
+library(groupdata2)
+library(Metrics)
+
+
+setwd("~/Dropbox/Aarhus Universitet/Eye tracking")
+
+#Exercise 3
+Samples=read.csv('SamplesV2.csv')
+Saccades=read.csv('SaccadesV2.csv')
+Fixations=read.csv('FixationsV2.csv')
+
+#Exercise
+#Samples=read.csv('SamplesV3.csv')
+#Saccades=read.csv('SaccadesV3.csv')
+#Fixations=read.csv('FixationsV3.csv')
+
+
+
+
+
+hist=ggplot(Fixations(aes(Duration)))+geom_histogram()
+
+#hist=ggplot(data=Fixations,aes(Duration)+geom_histogram())
+
+
+
+
+
+
+
+
+
+
+#lmer(PeakVelocity ~ SearchType + (1|ParticipantID), data = Saccades)
+#summary(model1)
+
+#lmer(? ~ SearchType + SearchOrder + (1+SearchType|ParticipantID) + (1+SearchType|SearchType))
+#summary(model2)
+
+
+
+model1=glmer(Duration ~ SearchType + Trial + (1+SearchType+Trial|ParticipantID), data=Fixations, family=gaussian(link = log))
+summary(model1)
+
+model2=glmer(Duration ~ SearchType * Trial + (1+SearchType*Trial|ParticipantID), data=Fixations, family=gaussian(link = log))
+summary(model2)
+
+model3=glmer(Duration ~ SearchType + (1+SearchType|ParticipantID), data=Fixations, Family=gaussian(link = log))
+summary(model3)
+
+
+#Cross validation
+visualsearch=subset(Fixations, Task=="VisualSearch")
+
+visualsearch$ParticipantID=as.character(visualsearch$ParticipantID)
+visualsearch$ParticipantID=as.factor(visualsearch$ParticipantID)
+visualsearch$ParticipantID=as.numeric(visualsearch$ParticipantID)
+
+folds = createFolds(unique(visualsearch$ParticipantID),k=3)
+
+
+#Simple model
+n=1
+error.train.simple=NULL
+error.test.simple=NULL
+for (i in folds)
+  {
+  testD=visualsearch[visualsearch$ParticipantID %in% i,]
+  trainD=visualsearch[!(visualsearch$ParticipantID %in% i),]
+  Mtrain = glmer(Duration ~ SearchType + (1+SearchType|ParticipantID), data=Fixations, Family=gaussian(link = log))
+  pred = predict(Mtrain,testD, allow.new.levels=TRUE)
+  error.train.simple[n]=Metrics::rmse(predict(Mtrain), trainD$Duration)
+  error.test.simple[n]=Metrics::rmse(predict(Mtrain), testD$Duration)
+
+  n=n+1
+  
+}
+
+mean(error.train.simple)
+mean(error.test.simple)
+
+
+
+
+#Fixed effect model
+n=1
+error.train.fixed=NULL
+error.test.fixed=NULL
+for (i in folds)
+  {
+  testD=visualsearch[visualsearch$ParticipantID %in% i,]
+  trainD=visualsearch[!(visualsearch$ParticipantID %in% i),]
+  Mtrain = glmer(Duration ~ SearchType + Trial + (1+SearchType+Trial|ParticipantID), data=Fixations, family=gaussian(link = log))
+  pred = predict(Mtrain,testD, allow.new.levels=TRUE)
+  error.train.fixed[n]=Metrics::rmse(predict(Mtrain), trainD$Duration)
+  error.test.fixed[n]=Metrics::rmse(predict(Mtrain), testD$Duration)
+
+  n=n+1
+  
+}
+
+mean(error.train.fixed)
+mean(error.test.fixed)
+
+
+
+
+#Interaction model
+n=1
+error.train.interaction=NULL
+error.test.interaction=NULL
+for (i in folds)
+  {
+  testD=visualsearch[visualsearch$ParticipantID %in% i,]
+  trainD=visualsearch[!(visualsearch$ParticipantID %in% i),]
+  Mtrain = glmer(Duration ~ SearchType * Trial + (1+SearchType*Trial|ParticipantID), data=trainD, family=gaussian(link = log))
+  pred = predict(Mtrain,testD, allow.new.levels=TRUE)
+  error.train.interaction[n]=Metrics::rmse(predict(Mtrain), trainD$Duration)
+  error.test.interaction[n]=Metrics::rmse(predict(Mtrain), testD$Duration)
+
+  n=n+1
+  
+}
+
+mean(error.train.interaction)
+mean(error.test.interaction)
+
+```
+
+#Noter til cross validation
+Ludvigs pakke: groupdata2.
+participantID passer ikke sammen, giver NAs
+
+as.character
+as.factor
+as.numeric
+
+
+lmer(? ~ SearchType * SearchOrder * Fixation * Trial + (1+SearchType*Fixation*Trial|ParticipantID), data=)
+summary(model4)
+
+data = x, family=gaussian(link = log)
+
+anna: 4.2
+
+```{r}
+
+#Visualisation of the data
+
+library(jpeg)
+library(grid)
+
+
+
+#example
+jet.colors <- colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan", "#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
+img <- readJPEG('eyetrackingscripts/foraging/ng090ws.jpg')
+g <- rasterGrob(img, interpolate=TRUE)
+
+#density
+ggplot(subset(Fixations, Task=='VisualSearch' & ParticipantID=='6_3_m2' & Trial==6), aes(x = PositionX, y = PositionY)) +
+  xlim(0,1920) +
+  ylim(0, 1080) +
+  annotation_custom(g, xmin=-Inf, xmax=Inf, ymin=-0, ymax=1080) + #xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf) +
+  stat_density2d(geom="raster", aes(fill=..density.., alpha=sqrt(sqrt(..density..))), contour=FALSE, n=1000) +
+  scale_alpha(range = c(0.1, 0.6)) + scale_fill_gradientn(colours = jet.colors(10), trans="sqrt")
+
+```
+
+
+```{r}
+#Heatmap
+#SEARCH
+img <- readJPEG('eyetrackingscripts/foraging/ng021ws.jpg')
+g <- rasterGrob(img, interpolate=TRUE)
+
+#density
+ggplot(subset(Fixations, Task=='VisualSearch' & ParticipantID=='3_1_f1' & Trial==1), aes(x = PositionX, y = PositionY)) +
+  xlim(0,1920) +
+  ylim(0, 1080) +
+  annotation_custom(g, xmin=-Inf, xmax=Inf, ymin=-0, ymax=1080) + #xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf) +
+  stat_density2d(geom="raster", aes(fill=..density.., alpha=sqrt(sqrt(..density..))), contour=FALSE, n=1000) +
+  scale_alpha(range = c(0.1, 0.6)) + scale_fill_gradientn(colours = jet.colors(10), trans="sqrt")
+```
+
+
+```{r}
+#Heatmap
+#COUNT
+img <- readJPEG('eyetrackingscripts/foraging/ng120ws.jpg')
+g <- rasterGrob(img, interpolate=TRUE)
+
+#density
+ggplot(subset(Fixations, Task=='VisualSearch' & ParticipantID=='3_1_f1' & Trial==7), aes(x = PositionX, y = PositionY)) +
+  xlim(0,1920) +
+  ylim(0, 1080) +
+  annotation_custom(g, xmin=-Inf, xmax=Inf, ymin=-0, ymax=1080) + #xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf) +
+  stat_density2d(geom="raster", aes(fill=..density.., alpha=sqrt(sqrt(..density..))), contour=FALSE, n=1000) +
+  scale_alpha(range = c(0.1, 0.6)) + scale_fill_gradientn(colours = jet.colors(10), trans="sqrt")
+```
+
+```{r}
+#SCANPATHS
+#Search
+img <- readJPEG('eyetrackingscripts/foraging/ng021ws.jpg')
+g <- rasterGrob(img, interpolate=TRUE)
+
+ggplot(subset(Fixations, Task == 'VisualSearch' & ParticipantID=='1_1_f1' & Trial==1), aes(x=PositionX, y=PositionY, label=Fixation)) +
+  xlim(0,1920) +
+  ylim(0, 1080) +
+  annotation_custom(g, xmin=-Inf, xmax=Inf, ymin=-0, ymax=1080)+
+  geom_point(size = 5, alpha = 0.5) +
+  geom_path(size = 1, alpha = 0.3) +
+  geom_text(aes(label = Fixation, size = 5))
+  
+
+```
+
+```{r}
+#SCANPATHS
+#Count
+img <- readJPEG('eyetrackingscripts/foraging/ng073ws.jpg')
+g <- rasterGrob(img, interpolate=TRUE)
+
+ggplot(subset(Fixations, Task == 'VisualSearch' & ParticipantID=='2_2_f2' & Trial==5), aes(x=PositionX, y=PositionY, label=Fixation)) +
+  xlim(0,1920) +
+  ylim(0, 1080) +
+  annotation_custom(g, xmin=-Inf, xmax=Inf, ymin=-0, ymax=1080)+
+  geom_point(size = 5, alpha = 0.5) +
+  geom_path(size = 1, alpha = 0.3) +
+  geom_text(aes(label = Fixation, size = 5))
+```
+```{r}
+#SCANPATHS
+#Count
+#fixed with y=1081-PositionY (inversion)
+
+img <- readJPEG('eyetrackingscripts/foraging/ng120ws.jpg')
+g <- rasterGrob(img, interpolate=TRUE)
+
+ggplot(subset(Fixations, Task == 'VisualSearch' & ParticipantID=='3_1_f1' & Trial==7), aes(x=PositionX, y=1081-PositionY, label=Fixation)) +
+  xlim(0,1920) +
+  ylim(0, 1080) +
+  annotation_custom(g, xmin=-Inf, xmax=Inf, ymin=-0, ymax=1080)+
+  geom_point(size = Fixations$Duration/100, alpha = 0.5) +
+  geom_path(size = 1, alpha = 0.3) +
+  geom_text(aes(label = Fixation, size = 5))
+```
+
+```{r}
+socialengagement=subset(Samples, Task=="SocialEngagement")
+
+ggplot(data=socialengagement, aes(x=TrialTime, y=PupilSize,colour=Ostension))+
+  geom_smooth()
+
+
+ggplot(data=socialengagement, aes(x=TrialTime, y=PupilSize,colour=Directionality))+
+  geom_smooth()
+```
+#graphs
+
+x=TrialTime
+y=PupilSize
+df=Samples
+
+g1=PartGender
+g2=ActorGender
+
+g1=Directedness
+g2=Ostensiveness
+
+geom_smooth()
+facet_grid()
+
+
+```{r}
+img <- readJPEG('eyetrackingscripts/foraging/ng120ws.jpg')
+g <- rasterGrob(img, interpolate=TRUE)
+
+ggplot(subset(Fixations, Task == 'VisualSearch' & ParticipantID=='3_1_f1' & Trial==7), aes(x=PositionX, y=PositionY, label=Fixation)) +
+  xlim(0,1920) +
+  ylim(0, 1080) +
+  annotation_custom(g, xmin=-Inf, xmax=Inf, ymin=-0, ymax=1080)+
+  geom_point(size = 5, alpha = 0.5) +
+  geom_path(size = 1, alpha = 0.3) +
+  geom_text(aes(label = Fixation, size = 5))
+
+
+
+#SCANPATHS
+#Count
+img <- readJPEG('eyetrackingscripts/foraging/ng120ws.jpg')
+g <- rasterGrob(img, interpolate=TRUE)
+
+ggplot(subset(Fixations, Task == 'VisualSearch' & ParticipantID=='3_1_f1' & Trial==7), aes(x=PositionX, y=PositionY, label=Fixation)) +
+  xlim(0,1920) +
+  ylim(0, 1080) +
+  annotation_custom(g, xmin=-Inf, xmax=Inf, ymin=-0, ymax=1080)+
+  geom_point(size = 5, alpha = 0.5) +
+  geom_path(size = 1, alpha = 0.3) +
+  geom_text(aes(label = Fixation, size = 5))
+```
+
+
+
+
